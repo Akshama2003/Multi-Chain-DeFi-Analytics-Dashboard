@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Chain DeFi Analytics Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0c1426 0%, #1a2332 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            position: relative;
+        }
+        
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 4px;
+            background: linear-gradient(90deg, #00d4ff, #9b59b6);
+            border-radius: 2px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #00d4ff, #9b59b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { text-shadow: 0 0 20px rgba(0, 212, 255, 0.3); }
+            to { text-shadow: 0 0 30px rgba(155, 89, 182, 0.5); }
+        }
+        
+        .subtitle {
+            color: #8892b0;
+            font-size: 1.1rem;
+        }
+        
+        .network-selector {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .network-btn {
+            padding: 12px 24px;
+            border: 2px solid transparent;
+            background: rgba(255, 255, 255, 0.05);
+            color: #ffffff;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .network-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.5s;
+        }
+        
+        .network-btn:hover::before {
+            left: 100%;
+        }
+        
+        .network-btn.active {
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.1);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+        
+        .network-btn.ethereum { border-color: #627eea; }
+        .network-btn.polygon { border-color: #8247e5; }
+        .network-btn.bsc { border-color: #f0b90b; }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #00d4ff, #9b59b6);
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #ffffff;
+        }
+        
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #00d4ff, #ffffff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .metric-change {
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .positive { color: #00ff88; }
+        .negative { color: #ff6b6b; }
+        
+        .chart-container {
+            height: 300px;
+            margin-top: 20px;
+            position: relative;
+        }
+        
+        .chart-canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        
+        .token-list {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 30px;
+        }
+        
+        .token-item {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .token-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            margin: 0 -25px;
+            padding: 15px 25px;
+            border-radius: 10px;
+        }
+        
+        .token-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex: 1;
+        }
+        
+        .token-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00d4ff, #9b59b6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .token-details h4 {
+            margin-bottom: 5px;
+            color: #ffffff;
+        }
+        
+        .token-details p {
+            color: #8892b0;
+            font-size: 0.9rem;
+        }
+        
+        .token-metrics {
+            display: flex;
+            gap: 30px;
+            text-align: right;
+        }
+        
+        .metric {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .metric-label {
+            font-size: 0.8rem;
+            color: #8892b0;
+            margin-bottom: 5px;
+        }
+        
+        .metric-value-small {
+            font-weight: 600;
+            color: #ffffff;
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(0, 212, 255, 0.3);
+            border-top: 3px solid #00d4ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-live { background: #00ff88; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .network-selector {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .token-metrics {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>DeFi Analytics Hub</h1>
+            <p class="subtitle">
+                <span class="status-indicator status-live"></span>
+                Real-time Multi-Chain Token Analytics
+            </p>
+        </div>
+        
+        <div class="network-selector">
+            <button class="network-btn ethereum active" data-network="ethereum">
+                Ethereum
+            </button>
+            <button class="network-btn polygon" data-network="polygon">
+                Polygon
+            </button>
+            <button class="network-btn bsc" data-network="bsc">
+                BSC
+            </button>
+        </div>
+        
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3 class="card-title">Total Value Locked</h3>
+                <div class="metric-value" id="tvl-value">$0</div>
+                <div class="metric-change positive" id="tvl-change">
+                    ↗ +0.00% (24h)
+                </div>
+                <div class="chart-container">
+                    <canvas id="tvl-chart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 class="card-title">24h Volume</h3>
+                <div class="metric-value" id="volume-value">$0</div>
+                <div class="metric-change positive" id="volume-change">
+                    ↗ +0.00% (24h)
+                </div>
+                <div class="chart-container">
+                    <canvas id="volume-chart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 class="card-title">Active Protocols</h3>
+                <div class="metric-value" id="protocols-value">0</div>
+                <div class="metric-change positive" id="protocols-change">
+                    ↗ +0 new protocols
+                </div>
+                <div class="chart-container">
+                    <canvas id="protocols-chart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 class="card-title">Yield Opportunities</h3>
+                <div class="metric-value" id="yield-value">0.00%</div>
+                <div class="metric-change positive" id="yield-change">
+                    Best APY Available
+                </div>
+                <div class="chart-container">
+                    <canvas id="yield-chart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="token-list">
+            <h3 class="card-title">Top Tokens by TVL</h3>
+            <div id="token-list-container">
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class DeFiDashboard {
+            constructor() {
+                this.currentNetwork = 'ethereum';
+                this.charts = {};
+                this.data = this.generateMockData();
+                this.init();
+            }
+            
+            init() {
+                this.setupEventListeners();
+                this.initializeCharts();
+                this.updateDashboard();
+                this.startDataUpdates();
+            }
+            
+            setupEventListeners() {
+                document.querySelectorAll('.network-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        document.querySelectorAll('.network-btn').forEach(b => b.classList.remove('active'));
+                        e.target.classList.add('active');
+                        this.currentNetwork = e.target.dataset.network;
+                        this.updateDashboard();
+                    });
+                });
+            }
+            
+            generateMockData() {
+                const networks = ['ethereum', 'polygon', 'bsc'];
+                const tokens = ['ETH', 'USDC', 'USDT', 'WBTC', 'LINK', 'UNI', 'AAVE', 'COMP'];
+                const data = {};
+                
+                networks.forEach(network => {
+                    data[network] = {
+                        tvl: Math.random() * 50000000000 + 10000000000,
+                        volume: Math.random() * 5000000000 + 1000000000,
+                        protocols: Math.floor(Math.random() * 200) + 50,
+                        yield: Math.random() * 15 + 2,
+                        tvlChange: (Math.random() - 0.5) * 20,
+                        volumeChange: (Math.random() - 0.5) * 30,
+                        tokens: tokens.map(token => ({
+                            symbol: token,
+                            name: this.getTokenName(token),
+                            tvl: Math.random() * 2000000000 + 100000000,
+                            volume: Math.random() * 500000000 + 50000000,
+                            price: Math.random() * 3000 + 10,
+                            change: (Math.random() - 0.5) * 20
+                        })).sort((a, b) => b.tvl - a.tvl),
+                        historicalData: this.generateHistoricalData()
+                    };
+                });
+                
+                return data;
+            }
+            
+            getTokenName(symbol) {
+                const names = {
+                    'ETH': 'Ethereum',
+                    'USDC': 'USD Coin',
+                    'USDT': 'Tether',
+                    'WBTC': 'Wrapped Bitcoin',
+                    'LINK': 'Chainlink',
+                    'UNI': 'Uniswap',
+                    'AAVE': 'Aave',
+                    'COMP': 'Compound'
+                };
+                return names[symbol] || symbol;
+            }
+            
+            generateHistoricalData() {
+                const data = [];
+                const now = new Date();
+                for (let i = 29; i >= 0; i--) {
+                    const date = new Date(now);
+                    date.setDate(date.getDate() - i);
+                    data.push({
+                        date: date.toISOString().split('T')[0],
+                        tvl: Math.random() * 10000000000 + 5000000000,
+                        volume: Math.random() * 1000000000 + 500000000,
+                        protocols: Math.floor(Math.random() * 50) + 100,
+                        yield: Math.random() * 10 + 5
+                    });
+                }
+                return data;
+            }
+            
+            initializeCharts() {
+                const chartOptions = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: '#00d4ff',
+                            borderWidth: 1
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: false,
+                            grid: { display: false }
+                        },
+                        y: {
+                            display: false,
+                            grid: { display: false }
+                        }
+                    },
+                    elements: {
+                        point: { radius: 0 },
+                        line: { tension: 0.4 }
+                    }
+                };
+                
+                // TVL Chart
+                this.charts.tvl = new Chart(document.getElementById('tvl-chart'), {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            data: [],
+                            borderColor: '#00d4ff',
+                            backgroundColor: 'rgba(0, 212, 255, 0.1)',
+                            fill: true,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: chartOptions
+                });
+                
+                // Volume Chart
+                this.charts.volume = new Chart(document.getElementById('volume-chart'), {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            data: [],
+                            borderColor: '#9b59b6',
+                            backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                            fill: true,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: chartOptions
+                });
+                
+                // Protocols Chart
+                this.charts.protocols = new Chart(document.getElementById('protocols-chart'), {
+                    type: 'bar',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            data: [],
+                            backgroundColor: 'rgba(0, 255, 136, 0.6)',
+                            borderColor: '#00ff88',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: chartOptions
+                });
+                
+                // Yield Chart
+                this.charts.yield = new Chart(document.getElementById('yield-chart'), {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            data: [],
+                            borderColor: '#f0b90b',
+                            backgroundColor: 'rgba(240, 185, 11, 0.1)',
+                            fill: true,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: chartOptions
+                });
+            }
+            
+            updateDashboard() {
+                const networkData = this.data[this.currentNetwork];
+                
+                // Update metrics
+                document.getElementById('tvl-value').textContent = this.formatCurrency(networkData.tvl);
+                document.getElementById('volume-value').textContent = this.formatCurrency(networkData.volume);
+                document.getElementById('protocols-value').textContent = networkData.protocols;
+                document.getElementById('yield-value').textContent = networkData.yield.toFixed(2) + '%';
+                
+                // Update changes
+                document.getElementById('tvl-change').innerHTML = this.formatChange(networkData.tvlChange);
+                document.getElementById('volume-change').innerHTML = this.formatChange(networkData.volumeChange);
+                document.getElementById('protocols-change').innerHTML = `↗ +${Math.floor(Math.random() * 10)} new protocols`;
+                document.getElementById('yield-change').textContent = 'Best APY Available';
+                
+                // Update charts
+                this.updateCharts(networkData);
+                
+                // Update token list
+                this.updateTokenList(networkData.tokens);
+            }
+            
+            updateCharts(data) {
+                const labels = data.historicalData.map(d => d.date);
+                
+                // TVL Chart
+                this.charts.tvl.data.labels = labels;
+                this.charts.tvl.data.datasets[0].data = data.historicalData.map(d => d.tvl);
+                this.charts.tvl.update('none');
+                
+                // Volume Chart
+                this.charts.volume.data.labels = labels;
+                this.charts.volume.data.datasets[0].data = data.historicalData.map(d => d.volume);
+                this.charts.volume.update('none');
+                
+                // Protocols Chart
+                this.charts.protocols.data.labels = labels.slice(-7);
+                this.charts.protocols.data.datasets[0].data = data.historicalData.slice(-7).map(d => d.protocols);
+                this.charts.protocols.update('none');
+                
+                // Yield Chart
+                this.charts.yield.data.labels = labels;
+                this.charts.yield.data.datasets[0].data = data.historicalData.map(d => d.yield);
+                this.charts.yield.update('none');
+            }
+            
+            updateTokenList(tokens) {
+                const container = document.getElementById('token-list-container');
+                container.innerHTML = tokens.slice(0, 8).map(token => `
+                    <div class="token-item">
+                        <div class="token-info">
+                            <div class="token-icon">${token.symbol.charAt(0)}</div>
+                            <div class="token-details">
+                                <h4>${token.symbol}</h4>
+                                <p>${token.name}</p>
+                            </div>
+                        </div>
+                        <div class="token-metrics">
+                            <div class="metric">
+                                <div class="metric-label">TVL</div>
+                                <div class="metric-value-small">${this.formatCurrency(token.tvl)}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Volume</div>
+                                <div class="metric-value-small">${this.formatCurrency(token.volume)}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">Price</div>
+                                <div class="metric-value-small">$${token.price.toFixed(2)}</div>
+                            </div>
+                            <div class="metric">
+                                <div class="metric-label">24h</div>
+                                <div class="metric-value-small ${token.change >= 0 ? 'positive' : 'negative'}">
+                                    ${token.change >= 0 ? '+' : ''}${token.change.toFixed(2)}%
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            formatCurrency(value) {
+                if (value >= 1e9) {
+                    return '$' + (value / 1e9).toFixed(2) + 'B';
+                } else if (value >= 1e6) {
+                    return '$' + (value / 1e6).toFixed(2) + 'M';
+                } else if (value >= 1e3) {
+                    return '$' + (value / 1e3).toFixed(2) + 'K';
+                } else {
+                    return '$' + value.toFixed(2);
+                }
+            }
+            
+            formatChange(change) {
+                const sign = change >= 0 ? '↗ +' : '↘ ';
+                const className = change >= 0 ? 'positive' : 'negative';
+                return `<span class="${className}">${sign}${Math.abs(change).toFixed(2)}% (24h)</span>`;
+            }
+            
+            startDataUpdates() {
+                setInterval(() => {
+                    // Simulate real-time data updates
+                    this.data = this.generateMockData();
+                    this.updateDashboard();
+                }, 30000); // Update every 30 seconds
+            }
+        }
+        
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new DeFiDashboard();
+        });
+    </script>
+</body>
+</html>
